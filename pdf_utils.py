@@ -55,7 +55,9 @@ class PDFConverter:
             logger.info(f"Converting {len(valid_images)} images to PDF")
             
             # Create output directory if needed
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            output_dir = os.path.dirname(output_path)
+            if output_dir:  # Only create directory if path has a directory component
+                os.makedirs(output_dir, exist_ok=True)
             
             # Convert images to PDF
             with open(output_path, "wb") as f:
@@ -89,11 +91,29 @@ class PDFConverter:
             image_paths = []
             
             # Find all image files in directory
-            for ext in self.supported_formats:
-                image_paths.extend(Path(image_dir).glob(f"{pattern}{ext}"))
-                image_paths.extend(Path(image_dir).glob(f"{pattern}{ext.upper()}"))
+            logger.info(f"Searching for images in {image_dir} with pattern '{pattern}'")
+            
+            # Check if pattern already includes an extension
+            if pattern.endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff', '.PNG', '.JPG', '.JPEG', '.BMP', '.TIFF')):
+                # Pattern already has extension, use as-is
+                image_paths.extend(Path(image_dir).glob(pattern))
+                logger.info(f"Using pattern with existing extension: {pattern}")
+            else:
+                # Pattern doesn't have extension, append supported formats
+                for ext in self.supported_formats:
+                    glob_pattern = f"{pattern}{ext}"
+                    found_files = list(Path(image_dir).glob(glob_pattern))
+                    image_paths.extend(found_files)
+                    logger.debug(f"Pattern '{glob_pattern}' found {len(found_files)} files")
+                    
+                    # Also check uppercase extensions
+                    glob_pattern_upper = f"{pattern}{ext.upper()}"
+                    found_files_upper = list(Path(image_dir).glob(glob_pattern_upper))
+                    image_paths.extend(found_files_upper)
+                    logger.debug(f"Pattern '{glob_pattern_upper}' found {len(found_files_upper)} files")
             
             image_paths = [str(p) for p in sorted(image_paths)]
+            logger.info(f"Total image files found: {len(image_paths)}")
             
             if not image_paths:
                 raise ValueError(f"No image files found in {image_dir}")

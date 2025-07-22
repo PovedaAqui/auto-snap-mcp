@@ -249,8 +249,21 @@ def check_tesseract() -> bool:
         True if Tesseract is available, False otherwise
     """
     try:
-        pytesseract.get_tesseract_version()
-        return True
-    except Exception as e:
+        import signal
+        
+        def timeout_handler(signum, frame):
+            raise TimeoutError("Tesseract check timed out")
+        
+        # Set timeout for tesseract check
+        signal.signal(signal.SIGALRM, timeout_handler)
+        signal.alarm(10)  # 10 second timeout
+        
+        try:
+            pytesseract.get_tesseract_version()
+            return True
+        finally:
+            signal.alarm(0)  # Cancel the alarm
+            
+    except (TimeoutError, Exception) as e:
         logger.error(f"Tesseract not available: {e}")
         return False

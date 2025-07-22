@@ -26,12 +26,45 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize MCP server
+logger.info("Initializing MCP server...")
 mcp = FastMCP("Auto-Snap MCP")
+logger.info("MCP server initialized")
 
-# Initialize components
-window_manager = CrossPlatformWindowManager()
-image_processor = ImageProcessor()
-pdf_converter = PDFConverter()
+# Initialize components lazily to avoid blocking MCP initialization
+window_manager = None
+image_processor = None
+pdf_converter = None
+
+def get_window_manager():
+    """Lazy initialization of window manager."""
+    global window_manager
+    if window_manager is None:
+        logger.info("Initializing CrossPlatformWindowManager...")
+        try:
+            window_manager = CrossPlatformWindowManager()
+            logger.info("CrossPlatformWindowManager initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize CrossPlatformWindowManager: {e}")
+            raise
+    return window_manager
+
+def get_image_processor():
+    """Lazy initialization of image processor."""
+    global image_processor
+    if image_processor is None:
+        logger.info("Initializing ImageProcessor...")
+        image_processor = ImageProcessor()
+        logger.info("ImageProcessor initialized successfully")
+    return image_processor
+
+def get_pdf_converter():
+    """Lazy initialization of PDF converter."""
+    global pdf_converter
+    if pdf_converter is None:
+        logger.info("Initializing PDFConverter...")
+        pdf_converter = PDFConverter()
+        logger.info("PDFConverter initialized successfully")
+    return pdf_converter
 
 
 @mcp.tool()
@@ -43,8 +76,9 @@ async def list_windows() -> str:
         JSON string containing list of windows with their IDs, titles, and properties.
     """
     try:
-        windows = window_manager.list_windows()
-        env_info = window_manager.get_environment_info()
+        wm = get_window_manager()
+        windows = wm.list_windows()
+        env_info = wm.get_environment_info()
         
         result = {
             "status": "success",
@@ -79,7 +113,8 @@ async def capture_window(window_id: str, output_path: Optional[str] = None) -> s
         JSON string with capture results and file path.
     """
     try:
-        captured_path = window_manager.capture_window(window_id, output_path)
+        wm = get_window_manager()
+        captured_path = wm.capture_window(window_id, output_path)
         
         result = {
             "status": "success",
@@ -113,7 +148,8 @@ async def capture_full_screen(output_path: Optional[str] = None) -> str:
         JSON string with capture results and file path.
     """
     try:
-        captured_path = window_manager.capture_full_screen(output_path)
+        wm = get_window_manager()
+        captured_path = wm.capture_full_screen(output_path)
         
         result = {
             "status": "success",
@@ -156,8 +192,9 @@ async def capture_document_pages(
     """
     try:
         # For multi-page capture, use the underlying manager if it supports it
-        if hasattr(window_manager.manager, 'capture_multiple_pages'):
-            captured_files = window_manager.manager.capture_multiple_pages(
+        wm = get_window_manager()
+        if hasattr(wm.manager, 'capture_multiple_pages'):
+            captured_files = wm.manager.capture_multiple_pages(
                 window_id=window_id,
                 page_count=page_count,
                 output_dir=output_dir,
@@ -172,14 +209,15 @@ async def capture_document_pages(
             captured_files = []
             for page_num in range(1, page_count + 1):
                 output_path = f"{output_dir}/page_{page_num:03d}.png"
-                captured_path = window_manager.capture_window(window_id, output_path)
+                captured_path = wm.capture_window(window_id, output_path)
                 captured_files.append(captured_path)
                 
                 # Simple delay between captures (no navigation for Windows apps yet)
                 if page_num < page_count:
                     time.sleep(delay_seconds)
         
-        total_size = sum(Path(f).stat().st_size for f in captured_files if Path(f).exists())
+        import os
+        total_size = sum(os.path.getsize(f) for f in captured_files if os.path.exists(f))
         
         result = {
             "status": "success",
@@ -221,7 +259,8 @@ async def process_images(
         JSON string with processing results.
     """
     try:
-        results = image_processor.process_batch(image_dir, operations)
+        ip = get_image_processor()
+        results = ip.process_batch(image_dir, operations)
         
         # Add OCR language info to results if OCR was performed
         if "ocr" in operations:
@@ -268,7 +307,8 @@ async def convert_to_pdf(
     """
     try:
         # Validate images first
-        validation = pdf_converter.validate_images_for_pdf(image_paths)
+        pc = get_pdf_converter()
+        validation = pc.validate_images_for_pdf(image_paths)
         
         if not validation["valid_images"]:
             return json.dumps({
@@ -278,14 +318,14 @@ async def convert_to_pdf(
             })
         
         # Convert to PDF
-        pdf_path = pdf_converter.images_to_pdf(
+        pdf_path = pc.images_to_pdf(
             validation["valid_images"],
             output_path,
             sort_files=sort_files,
             title=title
         )
         
-        pdf_info = pdf_converter.get_pdf_info(pdf_path)
+        pdf_info = pc.get_pdf_info(pdf_path)
         
         result = {
             "status": "success",
@@ -328,14 +368,15 @@ async def directory_to_pdf(
         JSON string with conversion results.
     """
     try:
-        pdf_path = pdf_converter.directory_to_pdf(
+        pc = get_pdf_converter()
+        pdf_path = pc.directory_to_pdf(
             image_dir=image_dir,
             output_path=output_path,
             pattern=pattern,
             title=title
         )
         
-        pdf_info = pdf_converter.get_pdf_info(pdf_path)
+        pdf_info = pc.get_pdf_info(pdf_path)
         
         result = {
             "status": "success",
@@ -392,8 +433,9 @@ async def full_document_workflow(
         
         # Step 1: Capture pages
         logger.info("Step 1: Capturing document pages")
-        if hasattr(window_manager.manager, 'capture_multiple_pages'):
-            captured_files = window_manager.manager.capture_multiple_pages(
+        wm = get_window_manager()
+        if hasattr(wm.manager, 'capture_multiple_pages'):
+            captured_files = wm.manager.capture_multiple_pages(
                 window_id=window_id,
                 page_count=page_count,
                 output_dir=capture_dir,
@@ -406,7 +448,7 @@ async def full_document_workflow(
             captured_files = []
             for page_num in range(1, page_count + 1):
                 output_path = f"{capture_dir}/page_{page_num:03d}.png"
-                captured_path = window_manager.capture_window(window_id, output_path)
+                captured_path = wm.capture_window(window_id, output_path)
                 captured_files.append(captured_path)
                 
                 if page_num < page_count:
@@ -423,7 +465,8 @@ async def full_document_workflow(
         processed_files = captured_files
         if process_images_flag:
             logger.info("Step 2: Processing captured images")
-            processing_results = image_processor.process_batch(
+            ip = get_image_processor()
+            processing_results = ip.process_batch(
                 capture_dir, 
                 ["enhance"]
             )
@@ -439,14 +482,15 @@ async def full_document_workflow(
         
         # Step 3: Convert to PDF
         logger.info("Step 3: Converting to PDF")
-        pdf_path = pdf_converter.images_to_pdf(
+        pc = get_pdf_converter()
+        pdf_path = pc.images_to_pdf(
             processed_files,
             output_pdf,
             sort_files=True,
             title=title or f"Document captured from window {window_id}"
         )
         
-        pdf_info = pdf_converter.get_pdf_info(pdf_path)
+        pdf_info = pc.get_pdf_info(pdf_path)
         
         workflow_results["steps"].append({
             "step": "pdf_conversion",
@@ -526,6 +570,55 @@ async def check_system_dependencies() -> str:
         return json.dumps({
             "status": "error",
             "error": str(e)
+        })
+
+
+@mcp.tool()
+async def debug_window_detection() -> str:
+    """
+    Comprehensive debugging information for window detection issues.
+    
+    Returns:
+        JSON string with detailed diagnostics about PowerShell environment,
+        process enumeration, and window detection capabilities.
+    """
+    try:
+        wm = get_window_manager()
+        
+        # Get basic environment info
+        env_info = wm.get_environment_info()
+        
+        debug_result = {
+            "status": "success",
+            "environment": env_info,
+            "window_detection_debug": {}
+        }
+        
+        # If using Windows manager, get detailed debug info
+        if hasattr(wm.manager, 'debug_window_detection'):
+            logger.info("Running comprehensive window detection debug...")
+            debug_info = wm.manager.debug_window_detection()
+            debug_result["window_detection_debug"] = debug_info
+        else:
+            debug_result["window_detection_debug"] = {
+                "message": "Debug functionality only available for Windows Window Manager"
+            }
+        
+        # Also include current window list for comparison
+        current_windows = wm.list_windows()
+        debug_result["current_window_list"] = current_windows
+        debug_result["current_window_count"] = len(current_windows)
+        
+        logger.info(f"Debug complete: found {len(current_windows)} windows")
+        
+        return json.dumps(debug_result, indent=2)
+        
+    except Exception as e:
+        logger.error(f"Failed to run debug window detection: {e}")
+        return json.dumps({
+            "status": "error", 
+            "error": str(e),
+            "environment": {"error": "Could not determine environment"}
         })
 
 
