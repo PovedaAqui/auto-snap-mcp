@@ -1,8 +1,8 @@
 # Auto-Snap MCP 📸
 
-**Automated screenshot capture and document processing for Claude Desktop**
+**Automated screenshot capture and document processing for MCP Clients**
 
-Turn your screenshots into PDFs automatically! Auto-Snap lets Claude capture windows, process documents, and create PDFs with simple natural language commands.
+Turn your screenshots into PDFs automatically! Auto-Snap lets your MCP client capture windows, process documents, and create PDFs with simple natural language commands.
 
 ## 🚀 Quick Start
 
@@ -160,4 +160,4 @@ Then tell Claude: *"Process this document in Spanish"*
 
 ---
 
-**Ready to automate your screenshots?** Install Auto-Snap and start talking to Claude about your documents! 🚀
+**Ready to automate your screenshots?** Install Auto-Snap and start talking to your MCP Clients about your documents! 🚀
