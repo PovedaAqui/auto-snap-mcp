@@ -16,6 +16,7 @@ from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 from capture import CrossPlatformWindowManager, WindowCapture, check_dependencies
 from processing import ImageProcessor, check_tesseract
 from pdf_utils import PDFConverter
+from config import get_config, get_output_directory, get_temp_directory, generate_page_filename
 
 # Configure logging
 logging.basicConfig(
@@ -173,7 +174,7 @@ async def capture_full_screen(output_path: Optional[str] = None) -> str:
 async def capture_document_pages(
     window_id: str, 
     page_count: int,
-    output_dir: str = "captures",
+    output_dir: Optional[str] = None,
     navigation_key: str = "Page_Down",
     delay_seconds: float = 1.0
 ) -> str:
@@ -191,25 +192,38 @@ async def capture_document_pages(
         JSON string with capture results and list of captured files.
     """
     try:
+        # Get configured output directory (with backward compatibility)
+        config = get_config()
+        if output_dir is None:
+            if config.should_use_legacy_mode():
+                output_dir = "captures"  # Legacy default
+            else:
+                actual_output_dir = get_output_directory()
+        else:
+            actual_output_dir = get_output_directory(output_dir)
+        
+        # Convert to string for compatibility with existing manager interface
+        output_dir_str = str(actual_output_dir)
+        
         # For multi-page capture, use the underlying manager if it supports it
         wm = get_window_manager()
         if hasattr(wm.manager, 'capture_multiple_pages'):
             captured_files = wm.manager.capture_multiple_pages(
                 window_id=window_id,
                 page_count=page_count,
-                output_dir=output_dir,
+                output_dir=output_dir_str,
                 navigation_key=navigation_key,
                 delay_seconds=delay_seconds
             )
         else:
             # Fallback: capture individual pages manually
-            from pathlib import Path
-            Path(output_dir).mkdir(exist_ok=True)
+            actual_output_dir.mkdir(parents=True, exist_ok=True)
             
             captured_files = []
             for page_num in range(1, page_count + 1):
-                output_path = f"{output_dir}/page_{page_num:03d}.png"
-                captured_path = wm.capture_window(window_id, output_path)
+                filename = generate_page_filename(page_num)
+                output_path = actual_output_dir / filename
+                captured_path = wm.capture_window(window_id, str(output_path))
                 captured_files.append(captured_path)
                 
                 # Simple delay between captures (no navigation for Windows apps yet)
@@ -223,7 +237,7 @@ async def capture_document_pages(
             "status": "success",
             "window_id": window_id,
             "pages_captured": len(captured_files),
-            "output_directory": output_dir,
+            "output_directory": output_dir_str,
             "captured_files": captured_files,
             "total_size_mb": round(total_size / (1024 * 1024), 2)
         }
@@ -403,7 +417,7 @@ async def full_document_workflow(
     window_id: str,
     page_count: int,
     output_pdf: str,
-    capture_dir: str = "temp_captures",
+    capture_dir: Optional[str] = None,
     title: Optional[str] = None,
     navigation_key: str = "Page_Down",
     delay_seconds: float = 1.0,
@@ -426,6 +440,19 @@ async def full_document_workflow(
         JSON string with complete workflow results.
     """
     try:
+        # Get configured temp directory (with backward compatibility)
+        config = get_config()
+        if capture_dir is None:
+            if config.should_use_legacy_mode():
+                capture_dir = "temp_captures"  # Legacy default
+            else:
+                actual_capture_dir = get_temp_directory()
+        else:
+            actual_capture_dir = get_temp_directory(capture_dir)
+        
+        # Convert to string for compatibility with existing manager interface
+        capture_dir_str = str(actual_capture_dir)
+        
         workflow_results = {
             "status": "success",
             "steps": []
@@ -438,17 +465,18 @@ async def full_document_workflow(
             captured_files = wm.manager.capture_multiple_pages(
                 window_id=window_id,
                 page_count=page_count,
-                output_dir=capture_dir,
+                output_dir=capture_dir_str,
                 navigation_key=navigation_key,
                 delay_seconds=delay_seconds
             )
         else:
             # Fallback for Windows applications
-            Path(capture_dir).mkdir(exist_ok=True)
+            actual_capture_dir.mkdir(parents=True, exist_ok=True)
             captured_files = []
             for page_num in range(1, page_count + 1):
-                output_path = f"{capture_dir}/page_{page_num:03d}.png"
-                captured_path = wm.capture_window(window_id, output_path)
+                filename = generate_page_filename(page_num)
+                output_path = actual_capture_dir / filename
+                captured_path = wm.capture_window(window_id, str(output_path))
                 captured_files.append(captured_path)
                 
                 if page_num < page_count:
@@ -458,7 +486,7 @@ async def full_document_workflow(
             "step": "capture",
             "status": "success",
             "files_captured": len(captured_files),
-            "output_directory": capture_dir
+            "output_directory": capture_dir_str
         })
         
         # Step 2: Process images (if requested)
@@ -467,7 +495,7 @@ async def full_document_workflow(
             logger.info("Step 2: Processing captured images")
             ip = get_image_processor()
             processing_results = ip.process_batch(
-                capture_dir, 
+                capture_dir_str, 
                 ["enhance"]
             )
             
@@ -502,15 +530,19 @@ async def full_document_workflow(
         # Step 4: Cleanup temporary files (optional)
         import shutil
         try:
-            if capture_dir.startswith("temp_"):
-                shutil.rmtree(capture_dir)
-                workflow_results["steps"].append({
-                    "step": "cleanup",
-                    "status": "success",
-                    "cleaned_directory": capture_dir
-                })
+            config = get_config()
+            if config.get_config_summary().get("auto_cleanup_temp", True):
+                # Only cleanup if it's a temp directory or legacy temp pattern
+                if (capture_dir is None and not config.should_use_legacy_mode()) or \
+                   (capture_dir_str.startswith("temp_") or "temp" in str(actual_capture_dir).lower()):
+                    shutil.rmtree(capture_dir_str)
+                    workflow_results["steps"].append({
+                        "step": "cleanup",
+                        "status": "success",
+                        "cleaned_directory": capture_dir_str
+                    })
         except Exception as cleanup_error:
-            logger.warning(f"Failed to cleanup {capture_dir}: {cleanup_error}")
+            logger.warning(f"Failed to cleanup {capture_dir_str}: {cleanup_error}")
         
         workflow_results.update({
             "window_id": window_id,
@@ -635,7 +667,7 @@ def main():
     if not check_tesseract():
         logger.warning("Tesseract OCR not available - OCR functionality disabled")
     
-    # Run the server
+    # Use default FastMCP run (which should handle STDIO automatically)
     mcp.run()
 
 

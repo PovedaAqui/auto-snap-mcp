@@ -1,0 +1,153 @@
+{
+  "mcpServers": {
+    "auto-snap-mcp": {
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "--name", "auto-snap-mcp",
+        "-e", "DISPLAY=${DISPLAY:-:0}",
+        "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "-v", "${HOME}/auto-snap-captures:/app/captures:rw",
+        "-v", "/tmp/auto-snap-temp:/app/temp:rw",
+        "-e", "AUTO_SNAP_OUTPUT_DIR=/app/captures",
+        "-e", "AUTO_SNAP_TEMP_DIR=/app/temp",
+        "-e", "AUTO_SNAP_USE_DATE_SUBDIRS=true",
+        "-e", "AUTO_SNAP_INCLUDE_TIMESTAMP=true",
+        "-e", "AUTO_SNAP_AUTO_CLEANUP_TEMP=true",
+        "-e", "AUTO_SNAP_LEGACY_MODE=false",
+        "mcp/auto-snap-mcp:latest"
+      ],
+      "env": {
+        "DISPLAY": "${DISPLAY:-:0}"
+      }
+    }
+  }
+}
+
+{
+  "_comment": "Alternative configurations for different use cases",
+  "examples": {
+    "minimal-config": {
+      "mcpServers": {
+        "auto-snap-mcp": {
+          "command": "docker",
+          "args": [
+            "run", "-i", "--rm",
+            "-v", "${HOME}/Screenshots:/app/captures:rw",
+            "mcp/auto-snap-mcp:latest"
+          ]
+        }
+      }
+    },
+    
+    "production-config": {
+      "mcpServers": {
+        "auto-snap-mcp": {
+          "command": "docker",
+          "args": [
+            "run", "-i", "--rm",
+            "--name", "auto-snap-mcp-prod",
+            "-e", "DISPLAY=:0",
+            "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw",
+            "-v", "/opt/document-captures:/app/captures:rw",
+            "-v", "/tmp/auto-snap:/app/temp:rw",
+            "-e", "AUTO_SNAP_OUTPUT_DIR=/app/captures",
+            "-e", "AUTO_SNAP_TEMP_DIR=/app/temp",
+            "-e", "AUTO_SNAP_USE_DATE_SUBDIRS=true",
+            "-e", "AUTO_SNAP_USE_SESSION_SUBDIRS=true",
+            "-e", "AUTO_SNAP_FILE_NAME_TEMPLATE=doc_{page:04d}",
+            "-e", "AUTO_SNAP_INCLUDE_TIMESTAMP=true",
+            "-e", "AUTO_SNAP_TIMESTAMP_FORMAT=iso",
+            "-e", "AUTO_SNAP_AUTO_CLEANUP_TEMP=true",
+            "-e", "AUTO_SNAP_TEMP_RETENTION_HOURS=12",
+            "-e", "AUTO_SNAP_LEGACY_MODE=false",
+            "mcp/auto-snap-mcp:latest"
+          ],
+          "env": {
+            "DISPLAY": ":0"
+          }
+        }
+      }
+    },
+
+    "wsl2-config": {
+      "mcpServers": {
+        "auto-snap-mcp": {
+          "command": "docker",
+          "args": [
+            "run", "-i", "--rm",
+            "--name", "auto-snap-mcp-wsl2",
+            "-v", "/mnt/c/Users/${USERNAME}/Documents/auto-snap-captures:/app/captures:rw",
+            "-v", "/tmp/auto-snap:/app/temp:rw",
+            "-e", "AUTO_SNAP_OUTPUT_DIR=/app/captures",
+            "-e", "AUTO_SNAP_TEMP_DIR=/app/temp", 
+            "-e", "AUTO_SNAP_USE_DATE_SUBDIRS=true",
+            "-e", "AUTO_SNAP_INCLUDE_TIMESTAMP=true",
+            "-e", "AUTO_SNAP_LEGACY_MODE=false",
+            "mcp/auto-snap-mcp:latest"
+          ]
+        }
+      }
+    },
+
+    "read-only-mounts": {
+      "_comment": "Security-focused configuration with read-only mounts where possible",
+      "mcpServers": {
+        "auto-snap-mcp": {
+          "command": "docker",
+          "args": [
+            "run", "-i", "--rm",
+            "--name", "auto-snap-mcp-secure",
+            "-e", "DISPLAY=:0",
+            "-v", "/tmp/.X11-unix:/tmp/.X11-unix:ro",
+            "-v", "${HOME}/auto-snap-captures:/app/captures:rw",
+            "-v", "/tmp/auto-snap-temp:/app/temp:rw",
+            "--security-opt", "no-new-privileges:true",
+            "--cap-drop", "ALL",
+            "mcp/auto-snap-mcp:latest"
+          ],
+          "env": {
+            "DISPLAY": ":0"
+          }
+        }
+      }
+    }
+  },
+
+  "_documentation": {
+    "volume_mounts": {
+      "/tmp/.X11-unix:/tmp/.X11-unix:rw": "X11 socket for GUI access (Linux only)",
+      "${HOME}/auto-snap-captures:/app/captures:rw": "Output directory for captured screenshots and PDFs",
+      "/tmp/auto-snap-temp:/app/temp:rw": "Temporary directory for image processing"
+    },
+    
+    "environment_variables": {
+      "DISPLAY": "X11 display for screenshot capture (Linux)",
+      "AUTO_SNAP_OUTPUT_DIR": "Container path for output files (/app/captures)",
+      "AUTO_SNAP_TEMP_DIR": "Container path for temporary files (/app/temp)",
+      "AUTO_SNAP_USE_DATE_SUBDIRS": "Create date-based subdirectories (true/false)",
+      "AUTO_SNAP_USE_SESSION_SUBDIRS": "Create session-based subdirectories (true/false)",
+      "AUTO_SNAP_FILE_NAME_TEMPLATE": "Template for generated filenames",
+      "AUTO_SNAP_INCLUDE_TIMESTAMP": "Include timestamps in filenames (true/false)",
+      "AUTO_SNAP_TIMESTAMP_FORMAT": "Timestamp format: iso, unix, or custom",
+      "AUTO_SNAP_AUTO_CLEANUP_TEMP": "Automatically clean temporary files (true/false)",
+      "AUTO_SNAP_TEMP_RETENTION_HOURS": "Hours to retain temporary files (default: 24)",
+      "AUTO_SNAP_LEGACY_MODE": "Use legacy directory structure (true/false)"
+    },
+
+    "platform_notes": {
+      "linux": "Full functionality with X11 forwarding",
+      "wsl2": "Windows application capture via PowerShell, limited X11 support",
+      "macos": "Experimental support, requires XQuartz and additional setup"
+    },
+
+    "security_considerations": {
+      "filesystem_access": "Container has no host filesystem access by default",
+      "volume_mounts": "Only mount directories you want the container to access",
+      "x11_security": "X11 forwarding can expose GUI to container processes",
+      "user_permissions": "Container runs as non-root user 'mcp-user'"
+    }
+  }
+}

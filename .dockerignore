@@ -1,0 +1,98 @@
+# Git and version control
+.git/
+.gitignore
+.gitattributes
+
+# Development and testing files
+test_*.py
+*_test.py
+test_*/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.pytest_cache/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Development environments
+.env
+.env.*
+.venv/
+venv/
+ENV/
+env/
+.conda/
+
+# Documentation and markdown (except README)
+docs/
+*.md
+!README.md
+TESTING_REPORT.md
+CLAUDE.md
+
+# Build and distribution
+build/
+dist/
+*.egg-info/
+.eggs/
+.wheel/
+
+# Logs and temporary files
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# Test outputs and captures from development
+test_*.png
+test_*.pdf
+test_*/
+renew_*/
+*_test/
+*_captures/
+temp_captures/
+test_*_output/
+
+# JSON test reports
+*_test_report.json
+mcp_tools_test_report.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Docker related (if building inside existing container)
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# UV lock file (will be installed during build)
+# Keep pyproject.toml for dependencies
+uv.lock
+
+# Local configuration overrides
+config.local.py
+settings.local.py

@@ -1,384 +1,163 @@
-# Auto-Snap MCP Server
+# Auto-Snap MCP 📸
 
-A Model Context Protocol (MCP) server for automated screenshot capture, image processing, and PDF conversion on Linux systems.
+**Automated screenshot capture and document processing for Claude Desktop**
 
-## Features
+Turn your screenshots into PDFs automatically! Auto-Snap lets Claude capture windows, process documents, and create PDFs with simple natural language commands.
 
-- **Window Management**: List and capture screenshots of specific windows
-- **Document Capture**: Automatically capture multiple pages from documents with navigation
-- **Image Processing**: OCR text extraction and image enhancement
-- **PDF Conversion**: Convert captured images to PDF documents
-- **Full Workflow**: End-to-end document capture and PDF generation
+## 🚀 Quick Start
 
-## System Requirements
+### Easy Setup (3 steps)
 
-### Python Dependencies (automatically installed)
-- `mcp>=1.0.0` - MCP server framework
-- `pillow>=10.0.0` - Image processing
-- `pytesseract>=0.3.10` - OCR functionality
-- `img2pdf>=0.5.0` - PDF conversion
-- `pyscreenshot>=3.1.0` - Cross-platform screenshots
-
-### System Dependencies (manual installation required)
+**1. Install dependencies:**
 ```bash
-sudo apt update
-sudo apt install -y wmctrl xdotool tesseract-ocr tesseract-ocr-spa
+sudo apt install -y wmctrl xdotool tesseract-ocr
 ```
 
-- **wmctrl**: Window management and enumeration
-- **xdotool**: Keyboard automation for page navigation
-- **tesseract-ocr**: OCR engine for text extraction
-
-## Installation
-
-1. **Clone or download the project**:
+**2. Get Auto-Snap:**
 ```bash
-git clone <repository-url>
+git clone https://github.com/your-repo/auto-snap-mcp
 cd auto-snap-mcp
-```
-
-2. **Install system dependencies**:
-```bash
-sudo apt install -y wmctrl xdotool tesseract-ocr tesseract-ocr-spa
-```
-
-3. **Install Python dependencies using uv**:
-```bash
 uv sync
 ```
 
-4. **Activate the virtual environment**:
-```bash
-source .venv/bin/activate
-```
+**3. Add to Claude Desktop config:**
 
-## Usage
-
-### Starting the MCP Server
-
-```bash
-python server.py
-```
-
-The server will start on `http://127.0.0.1:8000`
-
-### Available MCP Tools
-
-#### 1. `list_windows`
-List all available windows for screenshot capture.
-
-**Returns**: JSON with window information including IDs, titles, and properties.
-
-#### 2. `capture_window`
-Capture screenshot of a specific window.
-
-**Parameters**:
-- `window_id` (str): Window ID from list_windows
-- `output_path` (optional str): Path to save screenshot
-
-#### 3. `capture_full_screen`
-Capture screenshot of the entire screen.
-
-**Parameters**:
-- `output_path` (optional str): Path to save screenshot
-
-#### 4. `capture_document_pages`
-Capture multiple pages from a document with automatic navigation.
-
-**Parameters**:
-- `window_id` (str): Window containing the document
-- `page_count` (int): Number of pages to capture
-- `output_dir` (str, default: "captures"): Directory to save pages
-- `navigation_key` (str, default: "Page_Down"): Key for navigation
-- `delay_seconds` (float, default: 1.0): Delay between navigation and capture
-
-#### 5. `process_images`
-Process images with various operations.
-
-**Parameters**:
-- `image_dir` (str): Directory containing images
-- `operations` (list, default: ["enhance"]): Operations to perform
-- `ocr_language` (str, default: "eng"): OCR language (`eng`, `spa`, etc.)
-
-**Available operations**: enhance, ocr, resize, deduplicate
-
-#### 6. `convert_to_pdf`
-Convert list of images to PDF.
-
-**Parameters**:
-- `image_paths` (list): List of image file paths
-- `output_path` (str): Output PDF path
-- `title` (optional str): PDF document title
-- `sort_files` (bool, default: true): Sort files by name
-
-#### 7. `directory_to_pdf`
-Convert all images in directory to PDF.
-
-**Parameters**:
-- `image_dir` (str): Directory containing images
-- `output_path` (str): Output PDF path
-- `title` (optional str): PDF document title
-- `pattern` (str, default: "*"): File pattern to match
-
-#### 8. `full_document_workflow`
-Complete workflow: capture � process � convert to PDF.
-
-**Parameters**:
-- `window_id` (str): Window containing document
-- `page_count` (int): Number of pages to capture
-- `output_pdf` (str): Final PDF output path
-- `capture_dir` (str, default: "temp_captures"): Temporary directory
-- `title` (optional str): PDF title
-- `navigation_key` (str, default: "Page_Down"): Navigation key
-- `delay_seconds` (float, default: 1.0): Navigation delay
-- `process_images_flag` (bool, default: true): Whether to enhance images
-
-#### 9. `check_system_dependencies`
-Check if required system dependencies are installed.
-
-**Returns**: Status of all dependencies and installation commands.
-
-## Examples
-
-### Basic Window Capture
-1. List windows: `list_windows()`
-2. Capture specific window: `capture_window(window_id="0x12345")`
-
-### Document Capture Workflow
-```python
-# Complete document capture and PDF conversion
-full_document_workflow(
-    window_id="0x12345",
-    page_count=10,
-    output_pdf="document.pdf",
-    title="My Captured Document"
-)
-```
-
-### Manual Workflow
-```python
-# Step by step
-capture_document_pages(window_id="0x12345", page_count=10)
-process_images(image_dir="captures", operations=["enhance", "ocr"])
-directory_to_pdf(image_dir="captures", output_path="document.pdf")
-```
-
-### Spanish Document Processing
-```python
-# Process Spanish documents with OCR
-capture_document_pages(window_id="0x12345", page_count=5)
-process_images(
-    image_dir="captures", 
-    operations=["enhance", "ocr"], 
-    ocr_language="spa"
-)
-directory_to_pdf(image_dir="captures", output_path="documento_espanol.pdf")
-```
-
-## Claude Desktop Integration
-
-### Prerequisites
-Before configuring with Claude Desktop, ensure all system dependencies are installed:
-```bash
-sudo apt install -y wmctrl xdotool tesseract-ocr tesseract-ocr-spa
-uv sync
-```
-
-### MCP Configuration
-
-Add this configuration to your Claude Desktop MCP settings file:
-
-**For Linux/macOS**: `~/.claude/claude_desktop_config.json`
-**For Windows**: `%APPDATA%\Claude\claude_desktop_config.json`
-
+Edit `~/.claude/claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
     "auto-snap-mcp": {
       "command": "uv",
       "args": ["run", "python", "server.py"],
-      "cwd": "/home/luispoveda93/auto-snap-mcp",
-      "env": {
-        "DISPLAY": ":0"
-      }
+      "cwd": "/path/to/auto-snap-mcp",
+      "env": {"DISPLAY": ":0"}
     }
   }
 }
 ```
 
-**Important**: Replace `/home/luispoveda93/auto-snap-mcp` with your actual project path.
+**4. Restart Claude Desktop** and try:
+- *"List all my open windows"*
+- *"Capture this PDF and convert to images"*
+- *"Take 5 screenshots and make them into a PDF"*
 
-### Installation Steps
+## ✨ What It Does
 
-1. **Install system dependencies**:
-   ```bash
-   sudo apt install -y wmctrl xdotool tesseract-ocr tesseract-ocr-spa
-   ```
+### 📋 **Document Capture**
+- Screenshot any window or the entire screen
+- Capture multi-page documents automatically
+- Works with PDFs, presentations, web pages
 
-2. **Install Python dependencies**:
-   ```bash
-   cd /path/to/auto-snap-mcp
-   uv sync
-   ```
+### 🔍 **Image Processing**
+- Extract text from screenshots (OCR)
+- Enhance image quality automatically
+- Process multiple images at once
 
-3. **Test the server locally**:
-   ```bash
-   uv run python server.py
-   ```
-   Server should start on `http://127.0.0.1:8000`
+### 📄 **PDF Creation**
+- Convert screenshots to PDF instantly
+- Organize files with smart naming
+- Compress PDFs for smaller size
 
-4. **Create or update Claude Desktop config**:
-   ```bash
-   mkdir -p ~/.claude
-   # Edit ~/.claude/claude_desktop_config.json with the configuration above
-   ```
+## 🎯 Try These Commands
 
-5. **Restart Claude Desktop** to load the new MCP server
+**"Capture this document as PDF"** → Takes screenshots and creates a PDF
 
-### Verification
+**"Extract text from these images"** → Runs OCR on screenshots  
 
-After restarting Claude Desktop, you should be able to use the MCP tools:
-- Ask Claude to "list windows" 
-- Request "capture a screenshot of a specific window"
-- Use "full document workflow" for complete document capture
+**"Archive this presentation"** → Screenshots all slides into one PDF
 
-### Alternative Configuration (Python Path)
+## 🐳 Docker Option (Zero Setup!)
 
-If you prefer using a specific Python interpreter:
+**Even easier:** Use our Docker image with no installation needed.
 
+Add this to Claude Desktop config instead:
 ```json
 {
   "mcpServers": {
     "auto-snap-mcp": {
-      "command": "/path/to/auto-snap-mcp/.venv/bin/python",
-      "args": ["server.py"],
-      "cwd": "/path/to/auto-snap-mcp",
-      "env": {
-        "DISPLAY": ":0"
-      }
+      "command": "docker",
+      "args": [
+        "run", "-i", "--rm",
+        "-e", "DISPLAY=:0", 
+        "-v", "/tmp/.X11-unix:/tmp/.X11-unix:rw",
+        "-v", "${HOME}/auto-snap-captures:/app/captures:rw",
+        "mcp/auto-snap-mcp:latest"
+      ]
     }
   }
 }
 ```
 
-### Troubleshooting Claude Desktop Integration
+For Linux, also run: `xhost +local:docker`
 
-1. **Server not starting**
-   - Check the Claude Desktop console/logs for error messages
-   - Verify all system dependencies are installed: `uv run python -c "from capture import check_dependencies; print(check_dependencies())"`
-   - Ensure the `cwd` path is correct and accessible
+## 🛠️ System Support
 
-2. **Tools not appearing**
-   - Restart Claude Desktop completely
-   - Check that the JSON configuration is valid
-   - Verify the server starts successfully when run manually
+- ✅ **Linux** (native X11)
+- ✅ **WSL2** (Windows apps from Linux)  
+- ⚠️ **macOS** (with XQuartz - experimental)
 
-3. **Permission/Display issues**
-   - Ensure `DISPLAY=:0` environment variable is set
-   - Check X11 forwarding if using SSH
-   - Verify user has access to X11 display
+## 🚨 Not Working?
 
-4. **Path issues**
-   - Use absolute paths in the configuration
-   - Ensure the virtual environment exists: `ls /path/to/auto-snap-mcp/.venv/`
-   - Check that `uv` is installed and accessible
+**Common fixes:**
 
-## Configuration
-
-### Navigation Keys
-Supported navigation keys for `capture_document_pages`:
-- `Page_Down` (default)
-- `Right`
-- `space`
-- `Down`
-- `End`
-
-### OCR Languages
-Default is English (`eng`). Supported languages include Spanish (`spa`). Install additional languages:
 ```bash
-# For Spanish (already installed)
-sudo apt install tesseract-ocr-spa
+# Check dependencies
+uv run python -c "from capture import check_dependencies; print(check_dependencies())"
 
-# For other languages
-sudo apt install tesseract-ocr-<language>
+# Fix X11 display
+export DISPLAY=:0
+
+# Test the server
+uv run python server.py
 ```
 
-**Examples of language codes:**
-- `eng` - English (default)
-- `spa` - Spanish ✅ (installed)
-- `fra` - French  
-- `deu` - German
-- `ita` - Italian
-- `por` - Portuguese
+**Still stuck?**
+1. Make sure the config path is correct: `~/.claude/claude_desktop_config.json`
+2. Restart Claude Desktop after config changes
+3. Check Claude Desktop logs for errors
 
-**Usage in MCP tools:**
-```python
-# Use Spanish for OCR processing
-process_images(image_dir="captures", operations=["enhance", "ocr"], ocr_language="spa")
+## 🎨 Customize Your Captures
+
+**Set where files go:**
+```bash
+export AUTO_SNAP_OUTPUT_DIR="$HOME/Documents/Screenshots"
 ```
 
-## Troubleshooting
-
-### Check Dependencies
-Use the built-in dependency checker:
-```python
-check_system_dependencies()
+**Organize by date:**
+```bash
+export AUTO_SNAP_USE_DATE_SUBDIRS=true
+export AUTO_SNAP_INCLUDE_TIMESTAMP=true
 ```
 
-### Common Issues
-
-1. **"wmctrl not found"**
-   ```bash
-   sudo apt install wmctrl
-   ```
-
-2. **"xdotool not found"**
-   ```bash
-   sudo apt install xdotool
-   ```
-
-3. **"Tesseract not available"**
-   ```bash
-   sudo apt install tesseract-ocr tesseract-ocr-spa
-   ```
-
-4. **Permission errors**
-   - Ensure you have X11 display access
-   - Check that `DISPLAY` environment variable is set
-
-5. **Window focus issues**
-   - Some window managers may prevent programmatic focus
-   - Try manually focusing the window before capture
-
-## Limitations
-
-- **Linux only**: Uses X11-specific tools (wmctrl, xdotool)
-- **GUI required**: Needs active X11 session
-- **Window manager dependent**: Some features may not work with all window managers
-- **Focus limitations**: Some applications prevent programmatic focus changes
-
-## Development
-
-### Project Structure
-```
-auto-snap-mcp/
-   server.py          # Main MCP server
-   capture.py         # Screenshot and window management
-   processing.py      # Image processing and OCR
-   pdf_utils.py       # PDF conversion utilities
-   pyproject.toml     # Project dependencies
-   README.md          # This file
+**Custom file names:**
+```bash
+export AUTO_SNAP_FILE_NAME_TEMPLATE="doc_{page:04d}"
 ```
 
-### Adding New Tools
-1. Implement the function in appropriate module
-2. Add MCP tool decorator in `server.py`
-3. Update this README with documentation
+## 🌍 Multiple Languages
 
-## License
+**Add more OCR languages:**
+```bash
+sudo apt install tesseract-ocr-spa  # Spanish
+sudo apt install tesseract-ocr-fra  # French
+sudo apt install tesseract-ocr-deu  # German
+```
 
-[Add your license information here]
+Then tell Claude: *"Process this document in Spanish"*
 
-## Contributing
+## 💡 Pro Tips
 
-[Add contribution guidelines here]
+- **Be specific**: *"Capture the Chrome window"* works better than *"take a screenshot"*
+- **Multi-step**: *"Screenshot this presentation and extract all the text"*
+- **Batch work**: *"Process all images in my Downloads and make PDFs"*
+
+## 🔐 Privacy
+
+- Everything runs locally on your machine
+- No cloud services or uploads
+- Only captures what you ask for
+- Automatic cleanup of temp files
+
+---
+
+**Ready to automate your screenshots?** Install Auto-Snap and start talking to Claude about your documents! 🚀

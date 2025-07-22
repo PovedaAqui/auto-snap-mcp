@@ -8,6 +8,7 @@ from pathlib import Path
 import img2pdf
 from PIL import Image
 import logging
+from config import get_config, get_output_directory
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +18,35 @@ class PDFConverter:
     
     def __init__(self):
         self.supported_formats = {'.png', '.jpg', '.jpeg', '.bmp', '.tiff'}
+    
+    def resolve_output_path(self, output_path: str, use_config: bool = True) -> str:
+        """
+        Resolve output path using configuration if it's a relative path.
+        
+        Args:
+            output_path: The output path (can be relative or absolute)
+            use_config: Whether to use configuration for relative paths
+            
+        Returns:
+            Resolved absolute path
+        """
+        path_obj = Path(output_path)
+        
+        if path_obj.is_absolute():
+            return output_path
+        
+        if use_config:
+            # For relative paths, place in configured output directory
+            config = get_config()
+            if config.should_use_legacy_mode():
+                # Legacy mode: use current directory
+                return output_path
+            else:
+                # Use configured output directory
+                output_dir = get_output_directory()
+                return str(output_dir / output_path)
+        else:
+            return output_path
     
     def images_to_pdf(self, image_paths: List[str], output_path: str, 
                      sort_files: bool = True, title: Optional[str] = None) -> str:

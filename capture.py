@@ -12,6 +12,7 @@ from pathlib import Path
 import pyscreenshot as ImageGrab
 from PIL import Image
 import logging
+from config import get_config, get_output_directory, generate_page_filename
 
 logger = logging.getLogger(__name__)
 
@@ -1000,7 +1001,7 @@ class WindowsWindowManager:
             return False
     
     def capture_multiple_pages(self, window_id: str, page_count: int, 
-                             output_dir: str = "captures", 
+                             output_dir: Optional[str] = None, 
                              navigation_key: str = "{DOWN}",
                              delay_seconds: float = 1.5) -> List[str]:
         """
@@ -1017,8 +1018,19 @@ class WindowsWindowManager:
             List of captured file paths
         """
         try:
+            # Get configured output directory (with backward compatibility)
+            config = get_config()
+            if output_dir is None:
+                if config.should_use_legacy_mode():
+                    output_dir = "captures"  # Legacy default
+                else:
+                    actual_output_dir = get_output_directory()
+            else:
+                actual_output_dir = get_output_directory(output_dir)
+            
             # Create output directory
-            os.makedirs(output_dir, exist_ok=True)
+            actual_output_dir.mkdir(parents=True, exist_ok=True)
+            output_dir_str = str(actual_output_dir)
             
             # Convert navigation key names to SendKeys format
             key_mapping = {
@@ -1048,9 +1060,10 @@ class WindowsWindowManager:
                 logger.info(f"Capturing page {page_num}/{page_count}")
                 
                 # Capture current page
-                output_path = os.path.join(output_dir, f"page_{page_num:03d}.png")
+                filename = generate_page_filename(page_num)
+                output_path = actual_output_dir / filename
                 try:
-                    captured_path = self.capture_window(window_id, output_path)
+                    captured_path = self.capture_window(window_id, str(output_path))
                     captured_files.append(captured_path)
                     logger.info(f"Captured page {page_num}: {captured_path}")
                 except Exception as e:
@@ -1069,7 +1082,7 @@ class WindowsWindowManager:
                     # Wait for page to load/render
                     time.sleep(delay_seconds)
             
-            logger.info(f"Multi-page capture completed: {len(captured_files)} pages captured to {output_dir}")
+            logger.info(f"Multi-page capture completed: {len(captured_files)} pages captured to {actual_output_dir}")
             
             # Restore original window state
             if original_window_state:
@@ -1563,7 +1576,7 @@ class WindowCapture:
             raise
     
     def capture_multiple_pages(self, window_id: str, page_count: int, 
-                             output_dir: str = "captures", 
+                             output_dir: Optional[str] = None, 
                              navigation_key: str = "Page_Down",
                              delay_seconds: float = 1.0) -> List[str]:
         """
@@ -1580,8 +1593,18 @@ class WindowCapture:
             List of captured file paths
         """
         try:
+            # Get configured output directory (with backward compatibility)
+            config = get_config()
+            if output_dir is None:
+                if config.should_use_legacy_mode():
+                    output_dir = "captures"  # Legacy default
+                else:
+                    actual_output_dir = get_output_directory()
+            else:
+                actual_output_dir = get_output_directory(output_dir)
+            
             # Create output directory
-            Path(output_dir).mkdir(exist_ok=True)
+            actual_output_dir.mkdir(parents=True, exist_ok=True)
             
             # Focus the window
             if not self.focus_window(window_id):
@@ -1591,16 +1614,17 @@ class WindowCapture:
             
             for page_num in range(1, page_count + 1):
                 # Capture current page
-                output_path = os.path.join(output_dir, f"page_{page_num:03d}.png")
-                self.capture_window(window_id, output_path)
-                captured_files.append(output_path)
+                filename = generate_page_filename(page_num)
+                output_path = actual_output_dir / filename
+                self.capture_window(window_id, str(output_path))
+                captured_files.append(str(output_path))
                 
                 # Navigate to next page (except for last page)
                 if page_num < page_count:
                     self._send_key_to_window(window_id, navigation_key)
                     time.sleep(delay_seconds)
             
-            logger.info(f"Captured {len(captured_files)} pages to {output_dir}")
+            logger.info(f"Captured {len(captured_files)} pages to {actual_output_dir}")
             return captured_files
             
         except Exception as e:
