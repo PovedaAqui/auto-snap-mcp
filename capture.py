@@ -288,6 +288,26 @@ class WindowsWindowManager:
                     [DllImport("user32.dll")]
                     public static extern IntPtr GetForegroundWindow();
                     
+                    [DllImport("user32.dll")]
+                    public static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder lpClassName, int nMaxCount);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string lpszWindow);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool BringWindowToTop(IntPtr hWnd);
+                    
+                    public delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
+                    
                     // Constants
                     public const int SW_HIDE = 0;
                     public const int SW_RESTORE = 9;
@@ -298,6 +318,22 @@ class WindowsWindowManager:
                     public const int LWA_ALPHA = 0x2;
                     public const uint PW_CLIENTONLY = 0x1;
                     public const uint PW_RENDERFULLCONTENT = 0x2;
+                    
+                    // Windows Messages
+                    public const uint WM_KEYDOWN = 0x0100;
+                    public const uint WM_KEYUP = 0x0101;
+                    public const uint WM_CHAR = 0x0102;
+                    public const uint WM_COMMAND = 0x0111;
+                    public const uint WM_VSCROLL = 0x0115;
+                    
+                    // Virtual Key Codes
+                    public const int VK_SPACE = 0x20;
+                    public const int VK_PRIOR = 0x21;  // Page Up
+                    public const int VK_NEXT = 0x22;   // Page Down
+                    public const int VK_DOWN = 0x28;   // Down Arrow
+                    public const int VK_UP = 0x26;     // Up Arrow
+                    public const int VK_LEFT = 0x25;   // Left Arrow
+                    public const int VK_RIGHT = 0x27;  // Right Arrow
                 }}
 "@
             
@@ -651,9 +687,170 @@ class WindowsWindowManager:
         
         return debug_info
     
+    def _find_pdf_viewer_window(self, parent_window_id: str) -> str:
+        """
+        Find the child window that handles PDF viewer functionality within Adobe Reader.
+        
+        Args:
+            parent_window_id: Parent window handle ID (Adobe Reader main window)
+        
+        Returns:
+            Child window handle ID that should receive navigation keys, or parent if not found
+        """
+        if not self.powershell_available:
+            logger.error("PowerShell not available - cannot enumerate child windows")
+            return parent_window_id
+        
+        try:
+            # PowerShell script to find PDF viewer child window
+            ps_script = f'''
+            $parentHandle = [IntPtr]{parent_window_id}
+            if ($parentHandle -eq 0) {{
+                Write-Output "{parent_window_id}"
+                exit 0
+            }}
+            
+            # Define Windows API functions for child window enumeration
+            Add-Type @"
+                using System;
+                using System.Runtime.InteropServices;
+                using System.Text;
+                
+                public class Win32 {{
+                    [DllImport("user32.dll")]
+                    public static extern bool EnumChildWindows(IntPtr hWndParent, EnumChildProc lpEnumFunc, IntPtr lParam);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern IntPtr FindWindowEx(IntPtr hWndParent, IntPtr hWndChildAfter, string lpszClass, string lpszWindow);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool IsWindowVisible(IntPtr hWnd);
+                    
+                    public delegate bool EnumChildProc(IntPtr hWnd, IntPtr lParam);
+                }}
+"@
+            
+            $foundWindows = @()
+            
+            # Strategy 1: Look for common Adobe Reader PDF viewer window classes
+            $knownPDFClasses = @(
+                "AVPageView",           # Adobe Reader page view
+                "AVScrolledPageView",   # Adobe Reader scrolled view  
+                "AcroRd32Class",       # Adobe Reader document
+                "AcrobatClass",        # Adobe Acrobat document
+                "AVL_AVView",          # Adobe Viewer
+                "AVPageViewWnd32",     # Adobe page view window
+                "AVThumbnailView"      # Adobe thumbnail view
+            )
+            
+            foreach ($className in $knownPDFClasses) {{
+                $childHandle = [Win32]::FindWindowEx($parentHandle, [IntPtr]::Zero, $className, $null)
+                if ($childHandle -ne [IntPtr]::Zero -and [Win32]::IsWindowVisible($childHandle)) {{
+                    Write-Verbose "Found PDF viewer window with class: $className"
+                    $foundWindows += $childHandle.ToString()
+                }}
+            }}
+            
+            # Strategy 2: Enumerate all child windows and look for likely candidates
+            $allChildWindows = @()
+            
+            # Define callback function for EnumChildWindows
+            $callback = {{
+                param($hWnd, $lParam)
+                
+                $className = New-Object System.Text.StringBuilder(256)
+                $result = [Win32]::GetClassName($hWnd, $className, $className.Capacity)
+                
+                if ($result -gt 0) {{
+                    $class = $className.ToString()
+                    $isVisible = [Win32]::IsWindowVisible($hWnd)
+                    
+                    # Look for classes that might contain PDF content
+                    if ($isVisible -and ($class -match "(View|Page|Document|PDF|Acro|AVL)" -or $class.Length -gt 10)) {{
+                        $allChildWindows += @{{
+                            Handle = $hWnd.ToString()
+                            ClassName = $class
+                            IsVisible = $isVisible
+                        }}
+                    }}
+                }}
+                
+                return $true  # Continue enumeration
+            }}
+            
+            # This won't work directly in PowerShell due to delegate limitations
+            # But we'll try the FindWindowEx approach which is more reliable
+            
+            # Strategy 3: Try to find the most likely candidate window
+            # Look for windows with specific patterns in class names
+            $candidateHandle = [IntPtr]::Zero
+            $childAfter = [IntPtr]::Zero
+            
+            do {{
+                $childAfter = [Win32]::FindWindowEx($parentHandle, $childAfter, $null, $null)
+                if ($childAfter -ne [IntPtr]::Zero) {{
+                    $className = New-Object System.Text.StringBuilder(256)
+                    $result = [Win32]::GetClassName($childAfter, $className, $className.Capacity)
+                    
+                    if ($result -gt 0) {{
+                        $class = $className.ToString()
+                        $isVisible = [Win32]::IsWindowVisible($childAfter)
+                        
+                        # Prioritize windows with PDF-related class names
+                        if ($isVisible -and ($class -match "(AVPageView|AVScrolled|AcroRd|Acrobat|AVL_AVView)" -or 
+                                          ($class.Length -gt 8 -and $class -notmatch "(Button|Static|Edit|ComboBox|ListBox)"))) {{
+                            $foundWindows += $childAfter.ToString()
+                            Write-Verbose "Found candidate window: $class ($($childAfter.ToString()))"
+                        }}
+                    }}
+                }}
+            }} while ($childAfter -ne [IntPtr]::Zero)
+            
+            # Return the best candidate or the parent if none found
+            if ($foundWindows.Count -gt 0) {{
+                # Return the first likely PDF viewer window
+                Write-Output $foundWindows[0]
+            }} else {{
+                # Fallback to parent window
+                Write-Output "{parent_window_id}"
+            }}
+            '''
+            
+            result = subprocess.run(
+                ['powershell.exe', '-Command', ps_script],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=15,  # 15 second timeout for child window enumeration
+                encoding='utf-8',
+                errors='ignore'
+            )
+            
+            child_window_id = result.stdout.strip()
+            if child_window_id and child_window_id != parent_window_id:
+                logger.info(f"Found PDF viewer child window: {child_window_id} (parent: {parent_window_id})")
+                return child_window_id
+            else:
+                logger.info(f"No suitable PDF viewer child window found, using parent: {parent_window_id}")
+                return parent_window_id
+                
+        except subprocess.TimeoutExpired:
+            logger.error("PowerShell child window enumeration timed out after 15 seconds")
+            return parent_window_id
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to enumerate child windows: {e}")
+            return parent_window_id
+        except Exception as e:
+            logger.error(f"Unexpected error finding PDF viewer window: {e}")
+            return parent_window_id
+    
     def _send_key_to_window(self, window_id: str, key: str) -> bool:
         """
-        Send a key press to a specific window using PowerShell SendKeys.
+        Send a key press to a specific window using PostMessage for direct window messaging.
+        First tries to find PDF viewer child window, then sends key directly via Windows API.
         
         Args:
             window_id: Window handle ID
@@ -667,17 +864,19 @@ class WindowsWindowManager:
             return False
         
         try:
-            # PowerShell script to focus window and send key
-            ps_script = f'''
-            Add-Type -AssemblyName System.Windows.Forms
+            # First, find the PDF viewer child window that should receive the keys
+            target_window_id = self._find_pdf_viewer_window(window_id)
+            logger.debug(f"Target window for key sending: {target_window_id} (original: {window_id})")
             
-            $windowHandle = [IntPtr]{window_id}
-            if ($windowHandle -eq 0) {{
-                Write-Error "Invalid window handle"
+            # PowerShell script using PostMessage for direct key sending
+            ps_script = f'''
+            $targetHandle = [IntPtr]{target_window_id}
+            if ($targetHandle -eq 0) {{
+                Write-Error "Invalid target window handle"
                 exit 1
             }}
             
-            # Define Windows API functions for window management
+            # Define comprehensive Windows API functions
             Add-Type @"
                 using System;
                 using System.Runtime.InteropServices;
@@ -686,37 +885,88 @@ class WindowsWindowManager:
                     public static extern bool SetForegroundWindow(IntPtr hWnd);
                     
                     [DllImport("user32.dll")]
-                    public static extern IntPtr GetForegroundWindow();
+                    public static extern bool BringWindowToTop(IntPtr hWnd);
                     
                     [DllImport("user32.dll")]
                     public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool IsWindow(IntPtr hWnd);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool IsWindowVisible(IntPtr hWnd);
+                    
+                    // Windows Messages
+                    public const uint WM_KEYDOWN = 0x0100;
+                    public const uint WM_KEYUP = 0x0101;
+                    public const uint WM_CHAR = 0x0102;
+                    
+                    // Virtual Key Codes
+                    public const int VK_SPACE = 0x20;
+                    public const int VK_PRIOR = 0x21;  // Page Up
+                    public const int VK_NEXT = 0x22;   // Page Down
+                    public const int VK_DOWN = 0x28;   // Down Arrow
+                    public const int VK_UP = 0x26;     // Up Arrow
+                    public const int VK_LEFT = 0x25;   // Left Arrow
+                    public const int VK_RIGHT = 0x27; // Right Arrow
                     
                     public const int SW_RESTORE = 9;
                     public const int SW_SHOW = 5;
                 }}
 "@
             
+            # Validate target window
+            if (-not [Win32]::IsWindow($targetHandle)) {{
+                Write-Error "Target window handle is not valid"
+                exit 1
+            }}
+            
+            # Map SendKeys format to virtual key codes
+            $virtualKey = 0
+            switch ("{key}") {{
+                "{{DOWN}}" {{ $virtualKey = [Win32]::VK_DOWN }}
+                "{{PGDN}}" {{ $virtualKey = [Win32]::VK_NEXT }}
+                "{{RIGHT}}" {{ $virtualKey = [Win32]::VK_RIGHT }}
+                "{{UP}}" {{ $virtualKey = [Win32]::VK_UP }}
+                "{{LEFT}}" {{ $virtualKey = [Win32]::VK_LEFT }}
+                " " {{ $virtualKey = [Win32]::VK_SPACE }}
+                default {{
+                    # Try to handle other keys - fallback to space
+                    $virtualKey = [Win32]::VK_NEXT  # Default to Page Down for PDF navigation
+                }}
+            }}
+            
+            if ($virtualKey -eq 0) {{
+                Write-Error "Unknown key mapping for: {key}"
+                exit 1
+            }}
+            
             try {{
-                # Ensure window is visible and restored if minimized
-                [Win32]::ShowWindow($windowHandle, [Win32]::SW_RESTORE) | Out-Null
-                Start-Sleep -Milliseconds 100
+                # Send key messages directly to target window (no window state changes needed)
+                $keyDownResult = [Win32]::PostMessage($targetHandle, [Win32]::WM_KEYDOWN, [IntPtr]$virtualKey, [IntPtr]0)
+                Start-Sleep -Milliseconds 50
+                $keyUpResult = [Win32]::PostMessage($targetHandle, [Win32]::WM_KEYUP, [IntPtr]$virtualKey, [IntPtr]0)
                 
-                # Set focus to target window
-                $focusResult = [Win32]::SetForegroundWindow($windowHandle)
-                if (-not $focusResult) {{
-                    Write-Warning "Failed to set foreground window"
+                if ($keyDownResult -and $keyUpResult) {{
+                    Write-Output "SUCCESS: PostMessage sent VK=$virtualKey to window $($targetHandle.ToString())"
+                }} else {{
+                    Write-Warning "PostMessage may have failed: KeyDown=$keyDownResult KeyUp=$keyUpResult"
+                    
+                    # Fallback: try SendMessage instead of PostMessage
+                    [Win32]::SendMessage($targetHandle, [Win32]::WM_KEYDOWN, [IntPtr]$virtualKey, [IntPtr]0) | Out-Null
+                    Start-Sleep -Milliseconds 50  
+                    [Win32]::SendMessage($targetHandle, [Win32]::WM_KEYUP, [IntPtr]$virtualKey, [IntPtr]0) | Out-Null
+                    Write-Output "FALLBACK: SendMessage used as fallback"
                 }}
                 
-                # Brief delay to ensure window has focus
-                Start-Sleep -Milliseconds 200
-                
-                # Send the key to the focused window
-                [System.Windows.Forms.SendKeys]::SendWait("{key}")
-                
-                Write-Output "SUCCESS"
-                
             }} catch {{
-                Write-Error "Failed to send key: $($_.Exception.Message)"
+                Write-Error "Failed to send key message: $($_.Exception.Message)"
                 exit 1
             }}
             '''
@@ -726,26 +976,27 @@ class WindowsWindowManager:
                 capture_output=True,
                 text=True,
                 check=True,
-                timeout=10,  # 10 second timeout for key sending
+                timeout=15,  # 15 second timeout for enhanced key sending
                 encoding='utf-8',
                 errors='ignore'
             )
             
-            if "SUCCESS" in result.stdout:
-                logger.debug(f"Successfully sent key '{key}' to window {window_id}")
+            if "SUCCESS" in result.stdout or "FALLBACK" in result.stdout:
+                logger.debug(f"Successfully sent key '{key}' to target window {target_window_id}")
                 return True
             else:
-                logger.error(f"Failed to send key '{key}' to window {window_id}")
+                logger.error(f"Failed to send key '{key}' to target window {target_window_id}")
+                logger.error(f"PowerShell output: {result.stdout}")
                 return False
                 
         except subprocess.TimeoutExpired:
-            logger.error(f"PowerShell key sending timed out after 10 seconds")
+            logger.error(f"PowerShell enhanced key sending timed out after 15 seconds")
             return False
         except subprocess.CalledProcessError as e:
-            logger.error(f"Failed to send key '{key}' to window {window_id}: {e}")
+            logger.error(f"Failed to send key '{key}' using PostMessage: {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error sending key: {e}")
+            logger.error(f"Unexpected error in enhanced key sending: {e}")
             return False
     
     def capture_multiple_pages(self, window_id: str, page_count: int, 
@@ -784,8 +1035,12 @@ class WindowsWindowManager:
             # Use mapping if available, otherwise use key as-is (for direct SendKeys format)
             sendkeys_format = key_mapping.get(navigation_key, navigation_key)
             
+            # Detect and preserve original window state
             logger.info(f"Starting multi-page capture: {page_count} pages from window {window_id}")
             logger.info(f"Navigation key: {navigation_key} -> {sendkeys_format}, Delay: {delay_seconds}s")
+            
+            original_window_state = self._detect_and_prepare_window_state(window_id)
+            logger.info(f"Original window state: {original_window_state}")
             
             captured_files = []
             
@@ -815,11 +1070,265 @@ class WindowsWindowManager:
                     time.sleep(delay_seconds)
             
             logger.info(f"Multi-page capture completed: {len(captured_files)} pages captured to {output_dir}")
+            
+            # Restore original window state
+            if original_window_state:
+                self._restore_window_state(window_id, original_window_state)
+                logger.info(f"Restored window to original state: {original_window_state}")
+            
             return captured_files
             
         except Exception as e:
+            # Restore original window state even on error
+            if 'original_window_state' in locals() and original_window_state:
+                try:
+                    self._restore_window_state(window_id, original_window_state)
+                    logger.info(f"Restored window state after error: {original_window_state}")
+                except Exception as restore_error:
+                    logger.warning(f"Failed to restore window state after error: {restore_error}")
+            
             logger.error(f"Failed to capture multiple pages: {e}")
             raise
+    
+    def _detect_and_prepare_window_state(self, window_id: str) -> dict:
+        """
+        Detect current window state and prepare for capture session.
+        Only modifies window state if necessary for capture operations.
+        
+        Args:
+            window_id: Window handle ID
+        
+        Returns:
+            Dictionary with original window state information
+        """
+        if not self.powershell_available:
+            logger.warning("PowerShell not available - cannot detect window state")
+            return {}
+        
+        try:
+            ps_script = f'''
+            $windowHandle = [IntPtr]{window_id}
+            if ($windowHandle -eq 0) {{
+                Write-Output "invalid_handle"
+                exit 0
+            }}
+            
+            # Define Windows API functions for state detection
+            Add-Type @"
+                using System;
+                using System.Runtime.InteropServices;
+                public class Win32 {{
+                    [DllImport("user32.dll")]
+                    public static extern bool IsWindow(IntPtr hWnd);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool IsWindowVisible(IntPtr hWnd);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool IsIconic(IntPtr hWnd);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool IsZoomed(IntPtr hWnd);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern IntPtr GetForegroundWindow();
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool SetForegroundWindow(IntPtr hWnd);
+                    
+                    [DllImport("user32.dll")]
+                    public static extern bool BringWindowToTop(IntPtr hWnd);
+                    
+                    public const int SW_RESTORE = 9;
+                    public const int SW_SHOW = 5;
+                    public const int SW_MINIMIZE = 6;
+                    public const int SW_MAXIMIZE = 3;
+                }}
+"@
+            
+            if (-not [Win32]::IsWindow($windowHandle)) {{
+                Write-Output "invalid_window"
+                exit 0
+            }}
+            
+            # Detect current state
+            $isVisible = [Win32]::IsWindowVisible($windowHandle)
+            $isMinimized = [Win32]::IsIconic($windowHandle)
+            $isMaximized = [Win32]::IsZoomed($windowHandle)
+            $isForeground = ([Win32]::GetForegroundWindow() -eq $windowHandle)
+            
+            # Determine state name
+            $stateName = if ($isMinimized) {{ 
+                "minimized" 
+            }} elseif ($isMaximized) {{ 
+                "maximized" 
+            }} elseif ($isVisible) {{ 
+                "normal" 
+            }} else {{ 
+                "hidden" 
+            }}
+            
+            # Determine if we need to prepare the window for capture
+            $needsPreparation = $false
+            
+            if ($isMinimized -or -not $isVisible) {{
+                Write-Verbose "Window needs preparation: restoring from minimized/hidden state"
+                $needsPreparation = $true
+                
+                # Only restore if minimized or hidden
+                [Win32]::ShowWindow($windowHandle, [Win32]::SW_RESTORE) | Out-Null
+                Start-Sleep -Milliseconds 200
+            }}
+            
+            if (-not $isForeground) {{
+                Write-Verbose "Window needs focus preparation"
+                $needsPreparation = $true
+                
+                # Only set focus if not already foreground
+                [Win32]::BringWindowToTop($windowHandle) | Out-Null
+                [Win32]::SetForegroundWindow($windowHandle) | Out-Null
+                Start-Sleep -Milliseconds 100
+            }}
+            
+            # Output state information
+            Write-Output "$stateName|$isVisible|$isMinimized|$isMaximized|$isForeground|$needsPreparation"
+            '''
+            
+            result = subprocess.run(
+                ['powershell.exe', '-Command', ps_script],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=10,
+                encoding='utf-8',
+                errors='ignore'
+            )
+            
+            output = result.stdout.strip()
+            if output in ["invalid_handle", "invalid_window"]:
+                logger.warning(f"Invalid window for state detection: {output}")
+                return {}
+            
+            # Parse state information
+            parts = output.split('|')
+            if len(parts) >= 6:
+                state_info = {
+                    'state_name': parts[0],
+                    'was_visible': parts[1] == 'True',
+                    'was_minimized': parts[2] == 'True', 
+                    'was_maximized': parts[3] == 'True',
+                    'was_foreground': parts[4] == 'True',
+                    'was_prepared': parts[5] == 'True'
+                }
+                
+                logger.debug(f"Detected window state: {state_info}")
+                return state_info
+            else:
+                logger.warning(f"Could not parse window state: {output}")
+                return {}
+                
+        except subprocess.TimeoutExpired:
+            logger.error("Window state detection timed out")
+            return {}
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to detect window state: {e}")
+            return {}
+        except Exception as e:
+            logger.error(f"Unexpected error in window state detection: {e}")
+            return {}
+    
+    def _restore_window_state(self, window_id: str, original_state: dict) -> bool:
+        """
+        Restore window to its original state after capture session.
+        
+        Args:
+            window_id: Window handle ID
+            original_state: State information from _detect_and_prepare_window_state
+        
+        Returns:
+            True if restoration was successful, False otherwise
+        """
+        if not self.powershell_available or not original_state:
+            return False
+        
+        try:
+            # Only restore if we made changes during preparation
+            if not original_state.get('was_prepared', False):
+                logger.debug("No window state changes were made, skipping restoration")
+                return True
+            
+            ps_script = f'''
+            $windowHandle = [IntPtr]{window_id}
+            if ($windowHandle -eq 0) {{
+                exit 1
+            }}
+            
+            # Define Windows API functions  
+            Add-Type @"
+                using System;
+                using System.Runtime.InteropServices;
+                public class Win32 {{
+                    [DllImport("user32.dll")]
+                    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+                    
+                    public const int SW_RESTORE = 9;
+                    public const int SW_MINIMIZE = 6;
+                    public const int SW_MAXIMIZE = 3;
+                    public const int SW_HIDE = 0;
+                }}
+"@
+            
+            $wasMinimized = [bool]::Parse("{str(original_state.get('was_minimized', False)).lower()}")
+            $wasMaximized = [bool]::Parse("{str(original_state.get('was_maximized', False)).lower()}")
+            $wasVisible = [bool]::Parse("{str(original_state.get('was_visible', True)).lower()}")
+            
+            # Restore original window state
+            if ($wasMinimized) {{
+                Write-Verbose "Restoring to minimized state"
+                [Win32]::ShowWindow($windowHandle, [Win32]::SW_MINIMIZE) | Out-Null
+            }} elseif ($wasMaximized) {{
+                Write-Verbose "Restoring to maximized state" 
+                [Win32]::ShowWindow($windowHandle, [Win32]::SW_MAXIMIZE) | Out-Null
+            }} elseif (-not $wasVisible) {{
+                Write-Verbose "Restoring to hidden state"
+                [Win32]::ShowWindow($windowHandle, [Win32]::SW_HIDE) | Out-Null
+            }} else {{
+                Write-Verbose "Restoring to normal state"
+                [Win32]::ShowWindow($windowHandle, [Win32]::SW_RESTORE) | Out-Null
+            }}
+            
+            Write-Output "SUCCESS"
+            '''
+            
+            result = subprocess.run(
+                ['powershell.exe', '-Command', ps_script],
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=5,
+                encoding='utf-8',
+                errors='ignore'
+            )
+            
+            if "SUCCESS" in result.stdout:
+                logger.debug("Successfully restored window state")
+                return True
+            else:
+                logger.warning("Failed to restore window state")
+                return False
+                
+        except subprocess.TimeoutExpired:
+            logger.error("Window state restoration timed out")
+            return False
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Failed to restore window state: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error in window state restoration: {e}")
+            return False
 
 
 class CrossPlatformWindowManager:
