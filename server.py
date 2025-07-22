@@ -5,6 +5,7 @@ MCP Server for automated screenshot capture and PDF conversion.
 import asyncio
 import logging
 import json
+import time
 from typing import Any, Dict, List, Optional
 from pathlib import Path
 
@@ -12,7 +13,7 @@ from mcp.server.fastmcp import FastMCP
 from mcp.server.models import InitializationOptions
 from mcp.types import Tool, TextContent, ImageContent, EmbeddedResource
 
-from capture import WindowCapture, check_dependencies
+from capture import CrossPlatformWindowManager, WindowCapture, check_dependencies
 from processing import ImageProcessor, check_tesseract
 from pdf_utils import PDFConverter
 
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 mcp = FastMCP("Auto-Snap MCP")
 
 # Initialize components
-window_capture = WindowCapture()
+window_manager = CrossPlatformWindowManager()
 image_processor = ImageProcessor()
 pdf_converter = PDFConverter()
 
@@ -42,12 +43,14 @@ async def list_windows() -> str:
         JSON string containing list of windows with their IDs, titles, and properties.
     """
     try:
-        windows = window_capture.list_windows()
+        windows = window_manager.list_windows()
+        env_info = window_manager.get_environment_info()
         
         result = {
             "status": "success",
             "windows": windows,
-            "count": len(windows)
+            "count": len(windows),
+            "environment": env_info
         }
         
         return json.dumps(result, indent=2)
@@ -58,7 +61,8 @@ async def list_windows() -> str:
             "status": "error",
             "error": str(e),
             "windows": [],
-            "count": 0
+            "count": 0,
+            "environment": {"error": "Could not determine environment"}
         })
 
 
@@ -75,7 +79,7 @@ async def capture_window(window_id: str, output_path: Optional[str] = None) -> s
         JSON string with capture results and file path.
     """
     try:
-        captured_path = window_capture.capture_window(window_id, output_path)
+        captured_path = window_manager.capture_window(window_id, output_path)
         
         result = {
             "status": "success",
@@ -109,7 +113,7 @@ async def capture_full_screen(output_path: Optional[str] = None) -> str:
         JSON string with capture results and file path.
     """
     try:
-        captured_path = window_capture.capture_full_screen(output_path)
+        captured_path = window_manager.capture_full_screen(output_path)
         
         result = {
             "status": "success",
@@ -151,13 +155,29 @@ async def capture_document_pages(
         JSON string with capture results and list of captured files.
     """
     try:
-        captured_files = window_capture.capture_multiple_pages(
-            window_id=window_id,
-            page_count=page_count,
-            output_dir=output_dir,
-            navigation_key=navigation_key,
-            delay_seconds=delay_seconds
-        )
+        # For multi-page capture, use the underlying manager if it supports it
+        if hasattr(window_manager.manager, 'capture_multiple_pages'):
+            captured_files = window_manager.manager.capture_multiple_pages(
+                window_id=window_id,
+                page_count=page_count,
+                output_dir=output_dir,
+                navigation_key=navigation_key,
+                delay_seconds=delay_seconds
+            )
+        else:
+            # Fallback: capture individual pages manually
+            from pathlib import Path
+            Path(output_dir).mkdir(exist_ok=True)
+            
+            captured_files = []
+            for page_num in range(1, page_count + 1):
+                output_path = f"{output_dir}/page_{page_num:03d}.png"
+                captured_path = window_manager.capture_window(window_id, output_path)
+                captured_files.append(captured_path)
+                
+                # Simple delay between captures (no navigation for Windows apps yet)
+                if page_num < page_count:
+                    time.sleep(delay_seconds)
         
         total_size = sum(Path(f).stat().st_size for f in captured_files if Path(f).exists())
         
@@ -372,13 +392,25 @@ async def full_document_workflow(
         
         # Step 1: Capture pages
         logger.info("Step 1: Capturing document pages")
-        captured_files = window_capture.capture_multiple_pages(
-            window_id=window_id,
-            page_count=page_count,
-            output_dir=capture_dir,
-            navigation_key=navigation_key,
-            delay_seconds=delay_seconds
-        )
+        if hasattr(window_manager.manager, 'capture_multiple_pages'):
+            captured_files = window_manager.manager.capture_multiple_pages(
+                window_id=window_id,
+                page_count=page_count,
+                output_dir=capture_dir,
+                navigation_key=navigation_key,
+                delay_seconds=delay_seconds
+            )
+        else:
+            # Fallback for Windows applications
+            Path(capture_dir).mkdir(exist_ok=True)
+            captured_files = []
+            for page_num in range(1, page_count + 1):
+                output_path = f"{capture_dir}/page_{page_num:03d}.png"
+                captured_path = window_manager.capture_window(window_id, output_path)
+                captured_files.append(captured_path)
+                
+                if page_num < page_count:
+                    time.sleep(delay_seconds)
         
         workflow_results["steps"].append({
             "step": "capture",
@@ -511,8 +543,7 @@ def main():
         logger.warning("Tesseract OCR not available - OCR functionality disabled")
     
     # Run the server
-    import uvicorn
-    uvicorn.run(mcp.app, host="127.0.0.1", port=8000)
+    mcp.run()
 
 
 if __name__ == "__main__":

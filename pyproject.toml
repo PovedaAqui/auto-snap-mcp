@@ -11,3 +11,9 @@ dependencies = [
     "img2pdf>=0.5.0",
     "pyscreenshot>=3.1.0"
 ]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0"
+]

@@ -59,14 +59,8 @@ class PDFConverter:
             
             # Convert images to PDF
             with open(output_path, "wb") as f:
-                # Create layout for each image
-                layout_fun = img2pdf.get_layout_fun(
-                    img2pdf.get_fixed_dpi_layout_fun(150)  # 150 DPI
-                )
-                
                 f.write(img2pdf.convert(
                     valid_images,
-                    layout_fun=layout_fun,
                     title=title or "Auto-Snap Captured Document"
                 ))
             
