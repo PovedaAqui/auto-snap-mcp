@@ -6,71 +6,32 @@ Turn your screenshots into PDFs automatically! Auto-Snap lets your MCP client ca
 
 ## 🚀 Quick Start
 
-### Easy Setup (3 steps)
+### Which Option Should I Choose?
 
-**1. Install dependencies:**
-```bash
-sudo apt install -y wmctrl xdotool tesseract-ocr
-```
+- **🐳 Docker** → Zero setup, works everywhere (recommended)
+- **🪟 WSL2** → Windows users with WSL2 installed
+- **🐧 Linux** → Native Linux
 
-**2. Get Auto-Snap:**
+### Setup Steps
+
+**1. Get Auto-Snap:**
 ```bash
 git clone https://github.com/your-repo/auto-snap-mcp
 cd auto-snap-mcp
+```
+
+**2. Install dependencies (Linux only):**
+```bash
+# Skip this step if using Docker
+sudo apt install -y wmctrl xdotool tesseract-ocr
 uv sync
 ```
 
-**3. Add to Claude Desktop config:**
+**3. Configure Claude Desktop:**
 
-Edit `~/.claude/claude_desktop_config.json`:
-```json
-{
-  "mcpServers": {
-    "auto-snap-mcp": {
-      "command": "uv",
-      "args": ["run", "python", "server.py"],
-      "cwd": "/path/to/auto-snap-mcp",
-      "env": {"DISPLAY": ":0"}
-    }
-  }
-}
-```
+Edit `~/.claude/claude_desktop_config.json` and add **one** of these:
 
-**4. Restart Claude Desktop** and try:
-- *"List all my open windows"*
-- *"Capture this PDF and convert to images"*
-- *"Take 5 screenshots and make them into a PDF"*
-
-## ✨ What It Does
-
-### 📋 **Document Capture**
-- Screenshot any window or the entire screen
-- Capture multi-page documents automatically
-- Works with PDFs, presentations, web pages
-
-### 🔍 **Image Processing**
-- Extract text from screenshots (OCR)
-- Enhance image quality automatically
-- Process multiple images at once
-
-### 📄 **PDF Creation**
-- Convert screenshots to PDF instantly
-- Organize files with smart naming
-- Compress PDFs for smaller size
-
-## 🎯 Try These Commands
-
-**"Capture this document as PDF"** → Takes screenshots and creates a PDF
-
-**"Extract text from these images"** → Runs OCR on screenshots  
-
-**"Archive this presentation"** → Screenshots all slides into one PDF
-
-## 🐳 Docker Option (Zero Setup!)
-
-**Even easier:** Use our Docker image with no installation needed.
-
-Add this to Claude Desktop config instead:
+**🐳 Docker (Recommended - No setup needed!)**
 ```json
 {
   "mcpServers": {
@@ -88,7 +49,89 @@ Add this to Claude Desktop config instead:
 }
 ```
 
-For Linux, also run: `xhost +local:docker`
+**🪟 WSL2 (Windows with WSL2)**
+```json
+{
+  "mcpServers": {
+    "auto-snap-mcp": {
+      "command": "wsl.exe",
+      "args": [
+        "bash", "-c",
+        "cd /home/YOUR_WSL_USERNAME/auto-snap-mcp && DISPLAY=:0 /home/YOUR_WSL_USERNAME/.local/bin/uv run python server.py"
+      ]
+    }
+  }
+}
+```
+
+**🐧 Linux Native**
+```json
+{
+  "mcpServers": {
+    "auto-snap-mcp": {
+      "command": "uv",
+      "args": ["run", "python", "server.py"],
+      "cwd": "/home/YOUR_USERNAME/auto-snap-mcp",
+      "env": {"DISPLAY": ":0"}
+    }
+  }
+}
+```
+
+**4. Restart Claude Desktop** and verify it works:
+- *"List all my open windows"* ← Start with this to test the connection
+- *"Capture this PDF and convert to images"*
+- *"Take 5 screenshots and make them into a PDF"*
+
+**✅ Working?** You should see your windows listed. If not, check the [🚨 Not Working?](#-not-working) section below.
+
+## 📁 Where Your Files Are Saved
+
+**By default, all your captures go to:**
+```
+~/auto-snap-captures/
+```
+
+**Full path examples:**
+- Linux: `/home/username/auto-snap-captures/`
+- WSL2: `/home/username/auto-snap-captures/`
+- Windows (Docker): `C:\Users\username\auto-snap-captures\`
+
+## ✨ What It Does & Commands to Try
+
+### 📋 **Document Capture**
+- Screenshot any window or the entire screen
+- Capture multi-page documents automatically
+- Works with PDFs, presentations, web pages
+
+### 🔍 **Image Processing**
+- Extract text from screenshots (OCR)
+- Enhance image quality automatically
+- Process multiple images at once
+
+### 📄 **PDF Creation**
+- Convert screenshots to PDF instantly
+- Organize files with smart naming
+- Compress PDFs for smaller size
+
+### 🎯 **Commands to Try**
+
+**"Capture this document as PDF"** → Takes screenshots and creates a PDF
+
+**"Extract text from these images"** → Runs OCR on screenshots  
+
+**"Archive this presentation"** → Screenshots all slides into one PDF
+
+**"List all my open windows"** → See what you can capture
+
+**"Take 5 screenshots and make them into a PDF"** → Multi-page capture
+
+**💡 Pro Tips:**
+- **Be specific**: *"Capture the Chrome window"* works better than *"take a screenshot"*
+- **Multi-step**: *"Screenshot this presentation and extract all the text"*
+- **Batch work**: *"Process all images in my Downloads and make PDFs"*
+
+Want to change where files are saved? See the [🎨 Customize Your Captures](#-customize-your-captures) section below.
 
 ## 🛠️ System Support
 
@@ -144,12 +187,6 @@ sudo apt install tesseract-ocr-deu  # German
 ```
 
 Then tell Claude: *"Process this document in Spanish"*
-
-## 💡 Pro Tips
-
-- **Be specific**: *"Capture the Chrome window"* works better than *"take a screenshot"*
-- **Multi-step**: *"Screenshot this presentation and extract all the text"*
-- **Batch work**: *"Process all images in my Downloads and make PDFs"*
 
 ## 🔐 Privacy
 
